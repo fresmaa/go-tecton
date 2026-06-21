@@ -166,3 +166,25 @@ func (p *PostgresDriver) Revert(ctx context.Context, payload driver.MigrationPay
 
 	return nil
 }
+
+// DryRun executes the migration inside a transaction but forces a rollback at the end.
+// This validates the SQL syntax and constraints without altering the database state.
+func (p *PostgresDriver) DryRun(ctx context.Context, payload driver.MigrationPayload) error {
+	// 1. Begin Transaction
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction for dry-run: %w", err)
+	}
+
+	// 2. FORCE ROLLBACK: This guarantees no changes are saved, regardless of success or failure.
+	defer tx.Rollback()
+
+	// 3. Execute the SQL payload
+	_, err = tx.ExecContext(ctx, payload.RawSQL)
+	if err != nil {
+		return fmt.Errorf("dry-run syntax/logic error: %w", err)
+	}
+
+	// No commit here! The defer block will safely discard the transaction.
+	return nil
+}

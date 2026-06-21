@@ -44,4 +44,8 @@ type DatabaseDriver interface {
 
 	// Close terminates the database connection gracefully.
 	Close(ctx context.Context) error
+
+	// DryRun executes a "dry run" migration script.
+	// It executes the migration but does not persist the changes.
+	DryRun(ctx context.Context, payload MigrationPayload) error
 }

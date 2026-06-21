@@ -86,16 +86,14 @@ func (m *Migrator) Up(ctx context.Context) error {
 		fmt.Printf("Applying migration: %s... ", fileName)
 		if err := m.driver.Apply(ctx, payload); err != nil {
 			fmt.Println("❌ FAILED")
-			
-			// --- TAMBAHKAN BAGIAN INI ---
-			// Panggil UI Renderer kita untuk menampilkan stack trace visual
+
+			// Print SQLError
 			ui.PrintSQLError(err, payload.RawSQL, fileName)
-			// ----------------------------
 
 			// Return immediately on first error to halt the process
 			return fmt.Errorf("error applying %s: %w", fileName, err)
 		}
-		
+
 		fmt.Println("✅ OK")
 		executionCount++
 	}
@@ -147,5 +145,63 @@ func (m *Migrator) Down(ctx context.Context) error {
 	fmt.Println("✅ OK")
 	fmt.Printf("Successfully reverted migration version: %d\n", lastRecord.Version)
 
+	return nil
+}
+
+// DryRun simulates applying all pending migrations to catch errors before actual deployment.
+func (m *Migrator) DryRun(ctx context.Context) error {
+	appliedRecords, err := m.driver.GetAppliedMigrations(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get applied migrations: %w", err)
+	}
+
+	appliedMap := make(map[int64]bool)
+	for _, record := range appliedRecords {
+		appliedMap[record.Version] = true
+	}
+
+	entries, err := fs.ReadDir(m.fileSys, m.dirPath)
+	if err != nil {
+		return fmt.Errorf("failed to read migration directory: %w", err)
+	}
+
+	var pendingFiles []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".up.sql") {
+			pendingFiles = append(pendingFiles, entry.Name())
+		}
+	}
+	sort.Strings(pendingFiles)
+
+	fmt.Println("🔍 Starting Dry-Run Validation...")
+
+	validationCount := 0
+	for _, fileName := range pendingFiles {
+		filePath := path.Join(m.dirPath, fileName)
+		payload, err := parser.ParseFile(m.fileSys, filePath)
+		if err != nil {
+			return fmt.Errorf("failed to parse file %s: %w", fileName, err)
+		}
+
+		if appliedMap[payload.Version] {
+			continue
+		}
+
+		fmt.Printf("Validating: %s... ", fileName)
+		if err := m.driver.DryRun(ctx, payload); err != nil {
+			fmt.Println("❌ FAILED")
+
+			// Print SQLError
+			ui.PrintSQLError(err, payload.RawSQL, fileName)
+
+			// Return immediately on first error to halt the process
+			return fmt.Errorf("validation error in %s: %w", fileName, err)
+		}
+
+		fmt.Println("✅ PASSED")
+		validationCount++
+	}
+
+	fmt.Printf("Dry-Run complete. %d file(s) are safe to deploy.\n", validationCount)
 	return nil
 }
