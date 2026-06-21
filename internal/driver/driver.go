@@ -48,4 +48,8 @@ type DatabaseDriver interface {
 	// DryRun executes a "dry run" migration script.
 	// It executes the migration but does not persist the changes.
 	DryRun(ctx context.Context, payload MigrationPayload) error
+
+	// ExecuteSeed executes a single SQL script (typically for seeding).
+	// Unlike Apply, it does not check or update the migrations table.
+	ExecuteSeed(ctx context.Context, rawSQL string) error
 }

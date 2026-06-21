@@ -188,3 +188,25 @@ func (p *PostgresDriver) DryRun(ctx context.Context, payload driver.MigrationPay
 	// No commit here! The defer block will safely discard the transaction.
 	return nil
 }
+
+// ExecuteSeed runs raw SQL within a transaction without tracking its state.
+// Ideal for idempotent data seeding operations.
+func (p *PostgresDriver) ExecuteSeed(ctx context.Context, rawSQL string) error {
+	// 1. Begin Transaction for safety
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// Safely rollback if anything panics or errors out before Commit
+	defer tx.Rollback()
+
+	// 2. Execute the raw SQL
+	_, err = tx.ExecContext(ctx, rawSQL)
+	if err != nil {
+		return fmt.Errorf("failed to execute seeder query: %w", err)
+	}
+
+	// 3. Commit the transaction
+	return tx.Commit()
+}
