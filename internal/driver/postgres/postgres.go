@@ -210,3 +210,31 @@ func (p *PostgresDriver) ExecuteSeed(ctx context.Context, rawSQL string) error {
 	// 3. Commit the transaction
 	return tx.Commit()
 }
+
+// DropAll completely wipes the database schema. USE WITH EXTREME CAUTION.
+func (p *PostgresDriver) DropAll(ctx context.Context) error {
+	// 1. Drop the public schema and everything inside it (CASCADE)
+	// 2. Recreate the clean public schema
+	// 3. Restore default permissions
+	query := `
+		DROP SCHEMA public CASCADE;
+		CREATE SCHEMA public;
+		GRANT ALL ON SCHEMA public TO public;
+
+		-- 4. Recreate the tracking tables matching the EXACT original schema
+		CREATE TABLE IF NOT EXISTS tecton_migrations (
+			version BIGINT PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			status VARCHAR(50) NOT NULL,
+			execution_time_ms BIGINT NOT NULL,
+			applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		);
+	`
+
+	_, err := p.db.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to drop database schema: %w", err)
+	}
+
+	return nil
+}

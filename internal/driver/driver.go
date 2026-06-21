@@ -54,4 +54,8 @@ type DatabaseDriver interface {
 	// ExecuteSeed executes a single SQL script (typically for seeding).
 	// Unlike Apply, it does not check or update the migrations table.
 	ExecuteSeed(ctx context.Context, rawSQL string) error
+
+	// DropAll drops all tables in the database.
+	// This is used by the Reset command.
+	DropAll(ctx context.Context) error
 }
