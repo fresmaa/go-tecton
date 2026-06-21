@@ -1,0 +1,12 @@
+# Binaries and executable files
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+tecton
+
+# Go workspace and tools
+.data/
+vendor/
