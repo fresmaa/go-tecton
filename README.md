@@ -34,7 +34,7 @@ While tools like `golang-migrate` and `goose` are great at executing SQL, they l
 
 ## 📸 Preview
 
-### Migration Error DX
+### Beautiful Error DX
 
 ![alt text](https://s3.my-playground.space/public-storage/visual-error-highlighting.png)
 
