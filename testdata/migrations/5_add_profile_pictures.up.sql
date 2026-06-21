@@ -1,0 +1,1 @@
+CREATE TABLE profile_pictures (id INT, user_id INT, url TEXT);

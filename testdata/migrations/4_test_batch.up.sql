@@ -1,0 +1,1 @@
+CREATE TABLE test_batch (id INT)

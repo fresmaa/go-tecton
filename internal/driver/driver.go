@@ -12,6 +12,7 @@ type MigrationRecord struct {
 	Name            string
 	Status          string // e.g., "applied", "failed" (useful for MySQL later)
 	ExecutionTimeMs int64
+	Batch           int
 	AppliedAt       time.Time
 }
 
@@ -26,6 +27,9 @@ type MigrationPayload struct {
 	// RawSQL contains the original full SQL string.
 	// Useful for PostgreSQL where we can execute the whole block in one transaction.
 	RawSQL string
+	// Batch is the number of statements to execute at once.
+	// This is used for bulk operations like inserting many rows.
+	Batch int
 }
 
 // DatabaseDriver is the contract that every supported DBMS must implement.

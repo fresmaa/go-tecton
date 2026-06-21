@@ -44,6 +44,7 @@ func (p *PostgresDriver) Initialize(ctx context.Context, connectionURL string) e
 			name VARCHAR(255) NOT NULL,
 			status VARCHAR(50) NOT NULL,
 			execution_time_ms BIGINT NOT NULL,
+			batch INTEGER NOT NULL,
 			applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		);
 	`
@@ -79,11 +80,13 @@ func (p *PostgresDriver) Apply(ctx context.Context, payload driver.MigrationPayl
 
 	// 3. Record the migration in the metadata table
 	executionTime := time.Since(startTime).Milliseconds()
-	insertQuery := `
-		INSERT INTO tecton_migrations (version, name, status, execution_time_ms) 
-		VALUES ($1, $2, 'applied', $3)
+	query := `
+		INSERT INTO tecton_migrations (version, name, status, execution_time_ms, batch)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (version) 
+		DO UPDATE SET status = $3, execution_time_ms = $4, batch = $5;
 	`
-	_, err = tx.ExecContext(ctx, insertQuery, payload.Version, payload.Name, executionTime)
+	_, err = tx.ExecContext(ctx, query, payload.Version, payload.Name, "applied", executionTime, payload.Batch)
 	if err != nil {
 		return fmt.Errorf("failed to insert metadata: %w", err)
 	}
@@ -108,7 +111,7 @@ func (p *PostgresDriver) Close(ctx context.Context) error {
 // This is used by the Engine to determine which files in the directory are pending.
 func (p *PostgresDriver) GetAppliedMigrations(ctx context.Context) ([]driver.MigrationRecord, error) {
 	query := `
-		SELECT version, name, status, execution_time_ms, applied_at 
+		SELECT version, name, status, execution_time_ms, batch, applied_at 
 		FROM tecton_migrations 
 		ORDER BY version ASC
 	`
@@ -121,7 +124,7 @@ func (p *PostgresDriver) GetAppliedMigrations(ctx context.Context) ([]driver.Mig
 	var records []driver.MigrationRecord
 	for rows.Next() {
 		var record driver.MigrationRecord
-		if err := rows.Scan(&record.Version, &record.Name, &record.Status, &record.ExecutionTimeMs, &record.AppliedAt); err != nil {
+		if err := rows.Scan(&record.Version, &record.Name, &record.Status, &record.ExecutionTimeMs, &record.Batch, &record.AppliedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan migration record: %w", err)
 		}
 		records = append(records, record)
@@ -227,6 +230,7 @@ func (p *PostgresDriver) DropAll(ctx context.Context) error {
 			name VARCHAR(255) NOT NULL,
 			status VARCHAR(50) NOT NULL,
 			execution_time_ms BIGINT NOT NULL,
+			batch INTEGER NOT NULL,
 			applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		);
 	`

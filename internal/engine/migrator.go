@@ -37,11 +37,21 @@ func (m *Migrator) Up(ctx context.Context) error {
 		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
 
-	// Create a map for fast lookup of applied versions
+	// Create a map for fast lookup of applied versions AND find the maximum batch number
 	appliedMap := make(map[int64]bool)
+	maxBatch := 0
+
 	for _, record := range appliedRecords {
 		appliedMap[record.Version] = true
+
+		// Get the highest batch number from the applied migrations
+		if record.Batch > maxBatch {
+			maxBatch = record.Batch
+		}
 	}
+
+	// The current execution batch is the highest batch number + 1
+	nextBatch := maxBatch + 1
 
 	// 2. Read migration files from the file system
 	entries, err := fs.ReadDir(m.fileSys, m.dirPath)
@@ -82,8 +92,11 @@ func (m *Migrator) Up(ctx context.Context) error {
 			continue // Skip, already applied
 		}
 
+		// Set the batch number to the current batch
+		payload.Batch = nextBatch
+
 		// 4. Execute the migration via the driver
-		fmt.Printf("Applying migration: %s... ", fileName)
+		fmt.Printf("Applying migration: %s (Batch %d)... ", fileName, nextBatch)
 		if err := m.driver.Apply(ctx, payload); err != nil {
 			fmt.Println("❌ FAILED")
 
@@ -101,7 +114,7 @@ func (m *Migrator) Up(ctx context.Context) error {
 	if executionCount == 0 {
 		fmt.Println("No pending migrations. Database is up to date!")
 	} else {
-		fmt.Printf("Successfully applied %d migration(s).\n", executionCount)
+		fmt.Printf("Successfully applied %d migration(s) in Batch %d.\n", executionCount, nextBatch)
 	}
 
 	return nil
@@ -121,29 +134,58 @@ func (m *Migrator) Down(ctx context.Context) error {
 		return nil
 	}
 
-	// 3. Identify the latest applied migration (Last In, First Out)
-	lastRecord := appliedRecords[len(appliedRecords)-1]
-
-	// Reconstruct the expected filename for the down migration
-	// Note: Assuming version is a timestamp or unpadded integer (e.g., 20260621120000)
-	downFileName := fmt.Sprintf("%d_%s.down.sql", lastRecord.Version, lastRecord.Name)
-	filePath := path.Join(m.dirPath, downFileName)
-
-	// 4. Parse the .down.sql file
-	payload, err := parser.ParseFile(m.fileSys, filePath)
-	if err != nil {
-		return fmt.Errorf("failed to parse rollback file %s: %w", downFileName, err)
+	// 3. Find the highest batch number
+	maxBatch := 0
+	for _, record := range appliedRecords {
+		if record.Batch > maxBatch {
+			maxBatch = record.Batch
+		}
 	}
 
-	// 5. Execute the revert via the driver
-	fmt.Printf("Reverting migration: %s... ", downFileName)
-	if err := m.driver.Revert(ctx, payload); err != nil {
-		fmt.Println("❌ FAILED")
-		return fmt.Errorf("error reverting %s: %w", downFileName, err)
+	// 4. Collect all migrations belonging to the highest batch
+	var batchToRevert []driver.MigrationRecord
+	for _, record := range appliedRecords {
+		if record.Batch == maxBatch {
+			batchToRevert = append(batchToRevert, record)
+		}
 	}
 
-	fmt.Println("✅ OK")
-	fmt.Printf("Successfully reverted migration version: %d\n", lastRecord.Version)
+	// 5. Sort descending (LIFO - Last In, First Out for the batch)
+	// We want to revert the newest migrations first
+	sort.Slice(batchToRevert, func(i, j int) bool {
+		return batchToRevert[i].Version > batchToRevert[j].Version
+	})
+
+	fmt.Printf("⏪ Reverting %d migration(s) from Batch %d...\n", len(batchToRevert), maxBatch)
+
+	// 6. Execute the revert for each file in the batch
+	executionCount := 0
+	for _, record := range batchToRevert {
+		// Reconstruct the expected filename for the down migration
+		downFileName := fmt.Sprintf("%d_%s.down.sql", record.Version, record.Name)
+		filePath := path.Join(m.dirPath, downFileName)
+
+		// Parse the .down.sql file
+		payload, err := parser.ParseFile(m.fileSys, filePath)
+		if err != nil {
+			return fmt.Errorf("failed to parse rollback file %s: %w", downFileName, err)
+		}
+
+		// Ensure the payload has the exact version to tell the driver which record to delete
+		payload.Version = record.Version
+
+		// Execute the revert via the driver
+		fmt.Printf("Reverting migration: %s... ", downFileName)
+		if err := m.driver.Revert(ctx, payload); err != nil {
+			fmt.Println("❌ FAILED")
+			return fmt.Errorf("error reverting %s: %w", downFileName, err)
+		}
+
+		fmt.Println("✅ OK")
+		executionCount++
+	}
+
+	fmt.Printf("Successfully reverted %d migration(s) (Batch %d reversed).\n", executionCount, maxBatch)
 
 	return nil
 }
