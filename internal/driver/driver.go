@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"time"
 )
 
 // MigrationRecord represents a row in the tecton_migrations table.
@@ -11,6 +12,7 @@ type MigrationRecord struct {
 	Name            string
 	Status          string // e.g., "applied", "failed" (useful for MySQL later)
 	ExecutionTimeMs int64
+	AppliedAt       time.Time
 }
 
 // MigrationPayload represents a parsed migration file ready for execution.

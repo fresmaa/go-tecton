@@ -108,7 +108,7 @@ func (p *PostgresDriver) Close(ctx context.Context) error {
 // This is used by the Engine to determine which files in the directory are pending.
 func (p *PostgresDriver) GetAppliedMigrations(ctx context.Context) ([]driver.MigrationRecord, error) {
 	query := `
-		SELECT version, name, status, execution_time_ms 
+		SELECT version, name, status, execution_time_ms, applied_at 
 		FROM tecton_migrations 
 		ORDER BY version ASC
 	`
@@ -121,7 +121,7 @@ func (p *PostgresDriver) GetAppliedMigrations(ctx context.Context) ([]driver.Mig
 	var records []driver.MigrationRecord
 	for rows.Next() {
 		var record driver.MigrationRecord
-		if err := rows.Scan(&record.Version, &record.Name, &record.Status, &record.ExecutionTimeMs); err != nil {
+		if err := rows.Scan(&record.Version, &record.Name, &record.Status, &record.ExecutionTimeMs, &record.AppliedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan migration record: %w", err)
 		}
 		records = append(records, record)

@@ -5,7 +5,6 @@ build/
 *.dll
 *.so
 *.dylib
-tecton
 
 # Go workspace and tools
 .data/
